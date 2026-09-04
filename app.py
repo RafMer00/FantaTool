@@ -1,6 +1,7 @@
 from flask import Flask, request, Response, redirect
 import pandas as pd
 import sqlite3
+import json
 
 app = Flask(__name__)
 FILE_DB = 'fantacalcio.db'
@@ -31,6 +32,14 @@ def home():
     if not auth or not check_auth(auth.username, auth.password):
         return richiedi_login()
     
+    tab = request.args.get('tab', 'asta')
+    
+    if tab == 'portieri':
+        return pagina_portieri()
+    else:
+        return pagina_asta()
+
+def pagina_asta():
     conn = sqlite3.connect(FILE_DB)
     df = pd.read_sql_query('SELECT * FROM giocatori', conn)
     conn.close()
@@ -43,7 +52,6 @@ def home():
     
     if COLONNA_TITOLARITA not in df.columns:
         df[COLONNA_TITOLARITA] = 100
-        
     df[COLONNA_TITOLARITA] = pd.to_numeric(df[COLONNA_TITOLARITA], errors='coerce').fillna(100).astype(int)
     
     df_miei = df[df['Mio'] == 'SI']
@@ -63,9 +71,7 @@ def home():
     slot_rimasti = sum(SLOT_MAX.values()) - slot_occupati
     rilancio_max = budget_rimasto - (slot_rimasti - 1) if slot_rimasti > 0 else 0
     
-    # 🧮 LOGICA DI CASCATA DEL BUDGET
     budget_ideale_dinamico = BUDGET_IDEALE.copy()
-    
     for i in range(len(ruoli_ordine)):
         r = ruoli_ordine[i]
         if miei_count[r] >= SLOT_MAX[r]:
@@ -91,7 +97,6 @@ def home():
         label_ruolo = "Bdgt Ruolo"
         budget_ruolo_html = "<p class='dash-val text-muted'>-</p>"
 
-    # 📊 CONTEGGIO GIOCATORI LIBERI PER APPETIBILITÀ (Da 5 a 1)
     df_liberi = df[df['Acquistato'] != 'SI']
     if ruolo_selezionato in ruoli_ordine:
         df_liberi_ruolo = df_liberi[df_liberi[COLONNA_RUOLO] == ruolo_selezionato]
@@ -139,11 +144,10 @@ def home():
         titolarita_perc = int(row[COLONNA_TITOLARITA])
         squadra = str(row['Squadra']) if pd.notna(row['Squadra']) else ''
         
-        # 🎨 Colore percentuale titolarità (>70 verde, 30-70 giallo, <30 rosso)
         if titolarita_perc > 70:
             colore_tit = "text-success fw-bold"
         elif titolarita_perc >= 30:
-            colore_tit = "text-warning fw-bold" # Giallo scuro/arancio leggibile
+            colore_tit = "text-warning fw-bold"
         else:
             colore_tit = "text-danger fw-bold"
         
@@ -165,6 +169,7 @@ def home():
                         <input type="hidden" name="id_giocatore" value="{row['Id']}">
                         <input type="hidden" name="ruolo" value="{ruolo_selezionato}">
                         <input type="hidden" name="sort1" value="{ordinamento_1}">
+                        <input type="hidden" name="tab" value="asta">
                         <button type="submit" name="action" value="annulla" class="btn btn-outline-dark w-100" style="font-size: 11px; padding: 2px;">Annulla</button>
                     </form>
                 </div>
@@ -176,6 +181,7 @@ def home():
                     <input type="hidden" name="id_giocatore" value="{row['Id']}">
                     <input type="hidden" name="ruolo" value="{ruolo_selezionato}">
                     <input type="hidden" name="sort1" value="{ordinamento_1}">
+                    <input type="hidden" name="tab" value="asta">
                     
                     <button type="submit" name="action" value="altri" class="btn btn-warning fw-bold w-100 shadow-sm" style="font-size: 11px; padding: 3px;">ALTRI</button>
                     
@@ -221,7 +227,17 @@ def home():
             </style>
         </head>
         <body>
-            <div class="sticky-top bg-light pb-2 shadow-sm border-bottom">
+            <!-- NAVIGATION TABS -->
+            <ul class="nav nav-pills nav-fill bg-dark py-2 px-1 sticky-top shadow">
+                <li class="nav-item">
+                    <a class="nav-link active fw-bold py-1" href="/?tab=asta">⚡ Asta Live</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-white fw-bold py-1" href="/?tab=portieri">🧤 Tabella Portieri</a>
+                </li>
+            </ul>
+
+            <div class="sticky-top bg-light pb-2 shadow-sm border-bottom" style="top: 45px;">
                 <div class="container pt-2 px-2">
                     <div class="d-flex justify-content-between text-center mb-2 fw-bold" style="font-size: 11px;">
                         <span class="{'text-success' if miei_count['P'] == SLOT_MAX['P'] else 'text-muted'}">P: {miei_count['P']}/{SLOT_MAX['P']}</span>
@@ -254,11 +270,11 @@ def home():
 
             <div class="container py-2 px-2">
                 <div class="d-flex justify-content-center gap-1 mb-2">
-                    <a href="/?ruolo=P&sort1={ordinamento_1}" class="btn {'btn-warning' if ruolo_selezionato == 'P' else 'btn-outline-warning'} fw-bold flex-fill btn-sm">P</a>
-                    <a href="/?ruolo=D&sort1={ordinamento_1}" class="btn {'btn-success' if ruolo_selezionato == 'D' else 'btn-outline-success'} fw-bold flex-fill btn-sm">D</a>
-                    <a href="/?ruolo=C&sort1={ordinamento_1}" class="btn {'btn-primary' if ruolo_selezionato == 'C' else 'btn-outline-primary'} fw-bold flex-fill btn-sm">C</a>
-                    <a href="/?ruolo=A&sort1={ordinamento_1}" class="btn {'btn-danger' if ruolo_selezionato == 'A' else 'btn-outline-danger'} fw-bold flex-fill btn-sm">A</a>
-                    <a href="/?ruolo=Tutti&sort1={ordinamento_1}" class="btn {'btn-dark' if ruolo_selezionato == 'Tutti' else 'btn-outline-dark'} fw-bold flex-fill btn-sm">Tutti</a>
+                    <a href="/?ruolo=P&sort1={ordinamento_1}&tab=asta" class="btn {'btn-warning' if ruolo_selezionato == 'P' else 'btn-outline-warning'} fw-bold flex-fill btn-sm">P</a>
+                    <a href="/?ruolo=D&sort1={ordinamento_1}&tab=asta" class="btn {'btn-success' if ruolo_selezionato == 'D' else 'btn-outline-success'} fw-bold flex-fill btn-sm">D</a>
+                    <a href="/?ruolo=C&sort1={ordinamento_1}&tab=asta" class="btn {'btn-primary' if ruolo_selezionato == 'C' else 'btn-outline-primary'} fw-bold flex-fill btn-sm">C</a>
+                    <a href="/?ruolo=A&sort1={ordinamento_1}&tab=asta" class="btn {'btn-danger' if ruolo_selezionato == 'A' else 'btn-outline-danger'} fw-bold flex-fill btn-sm">A</a>
+                    <a href="/?ruolo=Tutti&sort1={ordinamento_1}&tab=asta" class="btn {'btn-dark' if ruolo_selezionato == 'Tutti' else 'btn-outline-dark'} fw-bold flex-fill btn-sm">Tutti</a>
                 </div>
                 
                 <div class="card shadow-sm border-0 mb-2 bg-white">
@@ -275,6 +291,7 @@ def home():
                 <div class="mb-2">
                     <form action="/" method="GET" class="m-0">
                         <input type="hidden" name="ruolo" value="{ruolo_selezionato}">
+                        <input type="hidden" name="tab" value="asta">
                         <select name="sort1" class="form-select form-select-sm fw-bold shadow-sm text-center" style="font-size: 13px;" onchange="this.form.submit()">
                             <option value="Appetibilita" {'selected' if ordinamento_1 == 'Appetibilita' else ''}>Ordina per: ★ APPETIBILITÀ</option>
                             <option value="{COLONNA_TITOLARITA}" {'selected' if ordinamento_1 == COLONNA_TITOLARITA else ''}>Ordina per: 🛡️ TITOLARITÀ (%)</option>
@@ -321,6 +338,146 @@ def home():
     """
     return html
 
+def pagina_portieri():
+    conn = sqlite3.connect(FILE_DB)
+    df = pd.read_sql_query('SELECT * FROM giocatori WHERE R="P"', conn)
+    conn.close()
+    
+    df['Mio'] = df['Mio'].fillna('').astype(str).str.strip().str.upper()
+    miei_portieri = df[df['Mio'] == 'SI']
+    
+    squadre_serie_a = [
+        'ATA', 'BOL', 'CAG', 'COM', 'FIO', 'FRO', 'GEN', 'INT', 'JUV', 'LAZ',
+        'LEC', 'MIL', 'MON', 'NAP', 'PAR', 'ROM', 'SAS', 'TOR', 'UDI', 'VEN',
+    ]
+    
+    # =========================================================================
+    # 🧮 MATRICE DEI VALORI DI INCROCIO ESATTI
+    # =========================================================================
+    # Puoi modificare i punteggi qui sotto come preferisci in base alla tua griglia!
+    # La chiave è una tupla (Squadra1, Squadra2) in ordine alfabetico o specifico.
+    # Per semplicità, usiamo una funzione che legge da una tabella di abbinamenti,
+    # oppure puoi inserire qui i tuoi valori puntuali (es. tra Inter e Atalanta metti 88).
+    # =========================================================================
+    def ottieni_punteggio_griglia(sq1, sq2):
+        # ESEMPIO DI MATRICE DI CONFIGURAZIONE PERSONALIZZATA:
+        # Se vuoi inserire un valore specifico per una coppia:
+        with open('griglia_portieri.json', 'r') as f:
+            accoppiamenti = json.load(f)
+            
+        return accoppiamenti[squadre_serie_a.index(sq1)][squadre_serie_a.index(sq2)]
+        
+
+    consigli_html = ""
+    
+    if miei_portieri.empty:
+        consigli_html = """
+        <div class="alert alert-warning text-center fw-bold py-4 shadow-sm" role="alert">
+            ⚠️ Non hai ancora acquistato nessun portiere!<br>
+            <small class="text-muted fw-normal">Segna almeno un portiere come <b>"MIO"</b> nella sezione <b>Asta Live</b> per vedere qui i migliori abbinamenti in automatico.</small>
+        </div>
+        """
+    else:
+        for _, mio_p in miei_portieri.iterrows():
+            squadra_scelta = str(mio_p['Squadra']).strip()
+            consigli_html += f"""
+            <div class="card shadow-sm border-0 mb-3 bg-white border-start border-success border-4">
+                <div class="card-body p-3">
+                    <h5 class="fw-bold text-success mb-1">🛡️ Il tuo portiere: {mio_p['Nome']} ({squadra_scelta})</h5>
+                    <p class="text-muted small mb-2">I migliori partner basati sulla tua griglia:</p>
+            """
+            
+            risultati = []
+            for sq in squadre_serie_a:
+                if sq.lower() == squadra_scelta.lower(): 
+                    continue
+                
+                portieri_sq = df[df['Squadra'].str.strip().str.lower() == sq.lower()]
+                if portieri_sq.empty: 
+                    continue
+                
+                p_tit = portieri_sq.sort_values(by='Qt.A', ascending=False).iloc[0]
+                
+                # PESCA IL VALORE DALLA MATRICE PERSONALIZZATA
+                punteggio = ottieni_punteggio_griglia(squadra_scelta, sq)
+                
+                stato_acquisto = str(p_tit['Acquistato']).strip().upper() == 'SI'
+                
+                risultati.append({
+                    'squadra': sq,
+                    'nome': p_tit['Nome'],
+                    'qt': p_tit['Qt.A'],
+                    'punteggio': punteggio,
+                    'preso': stato_acquisto
+                })
+                
+            risultati = sorted(risultati, key=lambda x: x['punteggio'], reverse=True)
+            
+            for res in risultati[:6]:
+                p = res['punteggio']
+                
+                # Assegna un colore e uno stile in base al valore dell'indice (da ~80 a 95+)
+                if p >= 90:
+                    colore_badge_griglia = "background-color: #198754; color: white;" # Verde scuro
+                elif p >= 85:
+                    colore_badge_griglia = "background-color: #d1e7dd; color: #0f5132;" # Verde chiaro
+                else:
+                    colore_badge_griglia = "background-color: #ffc107; color: #000;" # Giallo
+                
+                badge_stato = "<span class='badge bg-secondary'>Preso (Altri)</span>" if res['preso'] else "<span class='badge bg-success'>LIBERO! 🟢</span>"
+                bg_riga = "background-color: #f8f9fa; opacity: 0.6;" if res['preso'] else "background-color: #fff;"
+                
+                consigli_html += f"""
+                <div class="card mb-2 shadow-sm border-0" style="{bg_riga}">
+                    <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-0 fw-bold">{res['nome']} <span class="text-muted">({res['squadra']})</span></h6>
+                            <small class="text-muted">Quotazione: <b>{res['qt']}</b></small>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge fw-bold px-2 py-1 shadow-sm" style="{colore_badge_griglia} font-size: 13px;">{p}</span>
+                            {badge_stato}
+                        </div>
+                    </div>
+                </div>
+                """
+            consigli_html += "</div></div>"
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="it">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+            <title>Tabella Portieri</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+            <style>
+                body {{ background-color: #f0f2f5; font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+            </style>
+        </head>
+        <body>
+            <ul class="nav nav-pills nav-fill bg-dark py-2 px-1 sticky-top shadow">
+                <li class="nav-item">
+                    <a class="nav-link text-white fw-bold py-1" href="/?tab=asta">⚡ Asta Live</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link active fw-bold py-1" href="/?tab=portieri">🧤 Tabella Portieri</a>
+                </li>
+            </ul>
+
+            <div class="container py-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold text-primary m-0">Abbinamento Portieri 🛡️</h5>
+                </div>
+                <div>
+                    {consigli_html}
+                </div>
+            </div>
+        </body>
+    </html>
+    """
+    return html
+
 @app.route('/acquista', methods=['POST'])
 def acquista():
     auth = request.authorization
@@ -331,6 +488,7 @@ def acquista():
     ruolo_attuale = request.form['ruolo']
     sort_attuale = request.form['sort1']
     azione = request.form['action'] 
+    tab_attuale = request.form.get('tab', 'asta')
     
     conn = sqlite3.connect(FILE_DB)
     cursor = conn.cursor()
@@ -347,7 +505,7 @@ def acquista():
     conn.commit()
     conn.close()
     
-    return redirect(f'/?ruolo={ruolo_attuale}&sort1={sort_attuale}')
+    return redirect(f'/?tab={tab_attuale}&ruolo={ruolo_attuale}&sort1={sort_attuale}')
 
 if __name__ == '__main__':
     app.run(port=2828)
