@@ -108,6 +108,10 @@ def pagina_asta():
         label_ruolo = "Bdgt Ruolo"
         budget_ruolo_html = "<p class='dash-val text-muted'>-</p>"
 
+    # Calcolo slot rimanenti per il ruolo selezionato
+    slot_ruolo_rimasti = SLOT_MAX[ruolo_selezionato] - miei_count[ruolo_selezionato]
+    budget_ruolo_corrente = budget_ideale_dinamico[ruolo_selezionato] - spesa_ruoli[ruolo_selezionato]
+
     df_liberi = df[df['Acquistato'] != 'SI']
     if ruolo_selezionato in ruoli_ordine:
         df_liberi_ruolo = df_liberi[df_liberi[COLONNA_RUOLO] == ruolo_selezionato]
@@ -151,6 +155,22 @@ def pagina_asta():
     df_visibile = df_tabella.head(150) 
     righe_html = ""
     
+    # Funzione di calcolo prezzo massimo consigliato per giocatore
+    def calcola_prezzo_max(row, bdgt_rim, slot_rim):
+        if slot_rim <= 0:
+            return 1
+        base_slot = max(1, bdgt_rim / slot_rim)
+        appet = int(row['Appetibilita'])
+        pesi_appet = {0: 0.2, 1: 0.3, 2: 0.6, 3: 1.0, 4: 1.5, 5: 2.3}
+        fattore_appet = pesi_appet.get(appet, 1.0)
+        
+        # Titolarità incide in piccolissima parte (±10% max)
+        tit = int(row[COLONNA_TITOLARITA])
+        fattore_tit = 1.0 + ((tit - 50) / 500.0)
+        
+        prezzo_consigliato = int(base_slot * fattore_appet * fattore_tit)
+        return max(1, min(prezzo_consigliato, budget_rimasto, rilancio_max))
+
     for _, row in df_visibile.iterrows():
         appet = int(row['Appetibilita'])
         acquistato = row['Acquistato'] == 'SI'
@@ -158,6 +178,9 @@ def pagina_asta():
         preferito = row['Preferito'] == 'SI'
         titolarita_perc = int(row[COLONNA_TITOLARITA])
         squadra = str(row['Squadra']) if pd.notna(row['Squadra']) else ''
+        
+        # Calcolo prezzo massimo specifico per questo giocatore
+        prezzo_max_consigliato = calcola_prezzo_max(row, budget_ruolo_corrente, slot_ruolo_rimasti)
         
         if titolarita_perc > 70:
             colore_tit = "text-success fw-bold"
@@ -225,7 +248,7 @@ def pagina_asta():
             <td class="align-middle lh-sm pt-2 pb-2">
                 {form_preferito} <span class="fw-bold text-dark" style="font-size: 15px;">{row['Nome']}</span><br>
                 <small class="text-muted fw-bold" style="font-size:11px; text-transform: uppercase;">
-                    {squadra} • <span class="{colore_tit}">{titolarita_perc}%</span>
+                    {squadra} • <span class="{colore_tit}">{titolarita_perc}%</span> • <span class="text-primary fw-bold">Max: {prezzo_max_consigliato}€</span>
                 </small>
             </td>
             <td class="align-middle text-center" style="width: 50px;">
@@ -459,7 +482,6 @@ def pagina_rosa():
                     </div>
                 </div>
 
-                <!-- TASTO RESET TUTTI GLI ACQUISTI CON CONFERMA JS -->
                 <div class="card shadow-sm border-0 mb-3 bg-white">
                     <div class="card-body p-2 text-center">
                         <form action="/reset_asta" method="POST" id="formReset">
@@ -481,7 +503,7 @@ def pagina_rosa():
 
             <script>
                 function confermaReset() {{
-                    let conferma = confirm("⚠️ ATTENZIONE: Vuoi davvero azzerare TUTTI gli acquisti dell'asta? L'operazione non è reversibile!");
+                    let conferma = confirm("⚠️ ATTENZIONE: Vuoi davvero azzerare TUTTI gli acquisti dell'asta (miei e di altri)? L'operazione non è reversibile!");
                     if (conferma) {{
                         document.getElementById('formReset').submit();
                     }}
